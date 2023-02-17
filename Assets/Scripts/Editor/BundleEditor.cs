@@ -6,12 +6,11 @@ using UnityEngine;
 
 public class BundleEditor : MonoBehaviour
 {
-    [MenuItem(("Tools/打包"))]
+    public static string ABCONFIGPATH = "Assets/Scripts/Editor/ABConfig.asset";
+    [MenuItem(("Tools/Build AssetBundle"))]
     public static void Build()
     {
-        if (!Directory.Exists(Application.streamingAssetsPath))
-            Directory.CreateDirectory(Application.streamingAssetsPath);
-        BuildPipeline.BuildAssetBundles(Application.streamingAssetsPath, BuildAssetBundleOptions.ChunkBasedCompression, EditorUserBuildSettings.activeBuildTarget);
-        AssetDatabase.Refresh();
+        ABConfig abConfig = AssetDatabase.LoadAssetAtPath<ABConfig>(ABCONFIGPATH);
+        
     }
 }
