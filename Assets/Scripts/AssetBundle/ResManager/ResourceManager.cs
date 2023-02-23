@@ -1,8 +1,76 @@
 ﻿using System.Collections.Generic;
+using Ex;
+using UnityEditor;
+using UnityEngine;
 
 public class ResourceManager : Singleton<ResourceManager>
 {
+    public bool m_LoadFormAssetBundle = false;
+
+    /// <summary>
+    /// 缓存使用的资源列表
+    /// </summary>
+    public Dictionary<uint, ResourceItem> AssetDic { get; set; } = new Dictionary<uint, ResourceItem>();
+
+    /// <summary>
+    /// 缓存引用计数为零的资源列表，达到缓存最大的时候释放这个列表里面最早没用的资源
+    /// </summary>
     protected CMapList<ResourceItem> m_NoRefrenceAssetMapList = new CMapList<ResourceItem>();
+
+
+    public T LoadResource<T>(string path) where T : UnityEngine.Object
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return null;
+        }
+
+        uint crc = ExCRC32.GetCRC32(path);
+
+        ResourceItem item = GetCacheResourceItem(crc);
+
+        if (item != null)
+        {
+            return item.m_Obj as T;
+        }
+
+        T obj = null;
+
+#if UNITY_EDITOR
+        if (!m_LoadFormAssetBundle)
+        {
+            obj = 
+        }
+#endif
+    }
+
+
+#if UNITY_EDITOR
+    protected T LoadAssetByEditor<T>(string path) where T : UnityEngine.Object
+    {
+        return UnityEditor.AssetDatabase.LoadAssetAtPath<T>(path);
+    }
+#endif
+
+    ResourceItem GetCacheResourceItem(uint crc, int addRefCount = 1)
+    {
+        ResourceItem item = null;
+        if (AssetDic.TryGetValue(crc, out item))
+        {
+            if (item != null)
+            {
+                item.RefCount += addRefCount;
+                item.m_LastUseTime = Time.realtimeSinceStartup;
+
+                // if (item.RefCount <= 1)
+                // {
+                //     m_NoRefrenceAssetMapList.Remove(item);
+                // }
+            }
+        }
+
+        return item;
+    }
 }
 
 
