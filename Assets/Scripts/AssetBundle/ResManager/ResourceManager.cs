@@ -1,6 +1,5 @@
 ﻿using System.Collections.Generic;
 using Ex;
-using UnityEditor;
 using UnityEngine;
 
 public class ResourceManager : Singleton<ResourceManager>
@@ -18,6 +17,12 @@ public class ResourceManager : Singleton<ResourceManager>
     protected CMapList<ResourceItem> m_NoRefrenceAssetMapList = new CMapList<ResourceItem>();
 
 
+    /// <summary>
+    /// 同步资源加载，外部直接调用，仅加载不需要实例化的资源，例如Texture,音频等等
+    /// </summary>
+    /// <param name="path"></param>
+    /// <typeparam name="T"></typeparam>
+    /// <returns></returns>
     public T LoadResource<T>(string path) where T : UnityEngine.Object
     {
         if (string.IsNullOrEmpty(path))
@@ -39,11 +44,143 @@ public class ResourceManager : Singleton<ResourceManager>
 #if UNITY_EDITOR
         if (!m_LoadFormAssetBundle)
         {
-            obj = 
+            obj = LoadAssetByEditor<T>(path);
+            item = AssetBundleManager.Instance.FindResourceItem(crc);
         }
 #endif
+
+        if (obj == null)
+        {
+            item = AssetBundleManager.Instance.LoadResourceAssetBundle(crc);
+            if (item != null && item.m_AssetBundle != null)
+            {
+                obj = item.m_AssetBundle.LoadAsset<T>(item.m_AssetName);
+            }
+        }
+
+        CacheResource(path, ref item, crc, obj);
+        return obj;
     }
 
+    /// <summary>
+    /// 不需要实例化的资源的卸载
+    /// </summary>
+    /// <param name="obj"></param>
+    /// <param name="desctroyObj"></param>
+    /// <returns></returns>
+    public bool ReleaseResource(Object obj, bool desctroyObj = false)
+    {
+        if (obj == null)
+        {
+            return false;
+        }
+
+        ResourceItem item = null;
+
+        foreach (ResourceItem res in AssetDic.Values)
+        {
+            if (res.m_Guid == obj.GetInstanceID())
+            {
+                item = res;
+            }
+        }
+
+        if (item == null)
+        {
+            Debug.LogError("AssetDic 里不存在该资源 ： " + obj.name + " 可能释放了多次");
+        }
+
+        item.RefCount--;
+        DestroyResourceItem(item, desctroyObj);
+        return true;
+    }
+
+    /// <summary>
+    /// 缓存加载的资源
+    /// </summary>
+    /// <param name="path"></param>
+    /// <param name="item"></param>
+    /// <param name="crc"></param>
+    /// <param name="obj"></param>
+    /// <param name="addRefCount"></param>
+    void CacheResource(string path, ref ResourceItem item, uint crc, Object obj, int addRefCount = 1)
+    {
+        //缓存太多，清楚最早没有使用的资源
+        WashOut();
+
+        if (item == null)
+        {
+            Debug.LogError("ResourceItem is null , path : " + path);
+        }
+
+        if (obj == null)
+        {
+            Debug.LogError("ResourceLoad Fail : " + path);
+        }
+
+        item.m_Obj = obj;
+        item.m_Guid = obj.GetInstanceID();
+        item.m_LastUseTime = Time.realtimeSinceStartup;
+        item.RefCount += addRefCount;
+
+        ResourceItem oldItem = null;
+        if (AssetDic.TryGetValue(item.m_Crc, out oldItem))
+        {
+            AssetDic[item.m_Crc] = item;
+        }
+        else
+        {
+            AssetDic.Add(item.m_Crc, item);
+        }
+    }
+
+    /// <summary>
+    /// 缓存太多，清除最早没有使用的资源
+    /// </summary>
+    protected void WashOut()
+    {
+        //当当前内存使用大于80%,进行清除最早没用的资源
+        // {
+        //     if (m_NoRefrenceAssetMapList.Size() <= 0)
+        //         break;
+        //
+        //     ResourceItem item = m_NoRefrenceAssetMapList.GetLast();
+        //     DestroyResourceItem(item, true);
+        //     m_NoRefrenceAssetMapList.RemoveLast();
+        // }
+    }
+
+    /// <summary>
+    /// 回收一个资源
+    /// </summary>
+    /// <param name="item"></param>
+    /// <param name="destroy"></param>
+    protected void DestroyResourceItem(ResourceItem item, bool destroyCache = false)
+    {
+        if (item == null || item.RefCount > 0)
+        {
+            return;
+        }
+
+        if (!AssetDic.Remove(item.m_Crc))
+        {
+            return;
+        }
+
+        if (!destroyCache)
+        {
+            m_NoRefrenceAssetMapList.InsertToHead(item);
+            return;
+        }
+        
+        //释放assetbundle引用
+        AssetBundleManager.Instance.ReleaseAsset(item);
+
+        if (item.m_Obj != null)
+        {
+            item.m_Obj = null;
+        }
+    }
 
 #if UNITY_EDITOR
     protected T LoadAssetByEditor<T>(string path) where T : UnityEngine.Object

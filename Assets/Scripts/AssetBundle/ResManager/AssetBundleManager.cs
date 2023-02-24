@@ -227,6 +227,11 @@ public class ResourceItem
     public Object m_Obj = null;
 
     /// <summary>
+    /// 资源唯一标识
+    /// </summary>
+    public int m_Guid = 0;
+
+    /// <summary>
     /// 资源最后所使用的时间
     /// </summary>
     public float m_LastUseTime = 0.0f;
