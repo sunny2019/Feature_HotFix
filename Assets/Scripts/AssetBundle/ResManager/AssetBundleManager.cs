@@ -7,10 +7,10 @@ using Object = UnityEngine.Object;
 
 public class AssetBundleManager : Singleton<AssetBundleManager>
 {
-    //资源关系依赖配表，可以根据crc来找到对应的资源块
+    //资源关系依赖配表，可以根据crc（资源路径）来找到对应的资源块
     protected Dictionary<uint, ResourceItem> m_ResourceItemDic = new Dictionary<uint, ResourceItem>();
 
-    //储存已加载的AB包，key为crc
+    //储存已加载的AB包，key为crc（AB包名）
     protected Dictionary<uint, AssetBundleItem> m_AssetBundleItemDic = new Dictionary<uint, AssetBundleItem>();
 
     //AssetBundleItem类对象池
@@ -145,7 +145,7 @@ public class AssetBundleManager : Singleton<AssetBundleManager>
             }
         }
 
-        UnLoadAssetBundle(item.m_AssetName);
+        UnLoadAssetBundle(item.m_ABName);
     }
 
     private void UnLoadAssetBundle(string name)
