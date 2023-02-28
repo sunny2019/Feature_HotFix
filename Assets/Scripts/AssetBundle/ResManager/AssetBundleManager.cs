@@ -3,17 +3,22 @@ using System.Collections.Generic;
 using System.IO;
 using Ex;
 using UnityEngine;
-using Object = UnityEngine.Object;
 
 public class AssetBundleManager : Singleton<AssetBundleManager>
 {
-    //资源关系依赖配表，可以根据crc（资源路径）来找到对应的资源块
+    /// <summary>
+    /// 资源关系依赖配表，可以根据crc（资源路径）来找到对应的资源块
+    /// </summary>
     protected Dictionary<uint, ResourceItem> m_ResourceItemDic = new Dictionary<uint, ResourceItem>();
 
-    //储存已加载的AB包，key为crc（AB包名）
+    /// <summary>
+    /// 储存已加载的AB包，key为crc（AB包名）
+    /// </summary>
     protected Dictionary<uint, AssetBundleItem> m_AssetBundleItemDic = new Dictionary<uint, AssetBundleItem>();
 
-    //AssetBundleItem类对象池
+    /// <summary>
+    /// AssetBundleItem类对象池
+    /// </summary>
     protected ClassObjectPool<AssetBundleItem> m_AssetBundleItemPool = ObjectManager.Instance.GetOrCreateClassPool<AssetBundleItem>(500);
 
     /// <summary>
@@ -224,7 +229,7 @@ public class ResourceItem
     /// <summary>
     /// 资源对象
     /// </summary>
-    public Object m_Obj = null;
+    public UnityEngine.Object m_Obj = null;
 
     /// <summary>
     /// 资源唯一标识
@@ -240,6 +245,11 @@ public class ResourceItem
     /// 引用计数
     /// </summary>
     protected int m_RefCount = 0;
+
+    /// <summary>
+    /// 是否跳场景清掉
+    /// </summary>
+    public bool m_Clear = true;
 
     /// <summary>
     /// 引用计数

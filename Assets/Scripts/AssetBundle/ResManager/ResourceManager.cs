@@ -1,7 +1,9 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using Ex;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 public enum LoadResPriority
 {
@@ -9,6 +11,49 @@ public enum LoadResPriority
     RES_MIDDLE, //一般优先级
     RES_SLOW, //低优先级
     RES_NUM,
+}
+
+public class ResourceObj
+{
+    /// <summary>
+    /// 路径对应的CRC
+    /// </summary>
+    public uint m_Crc = 0;
+
+    /// <summary>
+    /// 资源块的引用
+    /// </summary>
+    public ResourceItem m_ResItem = null;
+
+    /// <summary>
+    /// 实例化出来的GameObject
+    /// </summary>
+    public GameObject m_CloneObj = null;
+
+    /// <summary>
+    /// 是否跳场景清除
+    /// </summary>
+    public bool m_bClear = true;
+
+    /// <summary>
+    /// 储存GUID
+    /// </summary>
+    public long m_Guid = 0;
+
+    /// <summary>
+    /// 是否已经放回对象池
+    /// </summary>
+    public bool m_Already = false;
+
+    public void Reset()
+    {
+        m_Crc = 0;
+        m_CloneObj = null;
+        m_bClear = true;
+        m_Guid = 0;
+        m_ResItem = null;
+        m_Already = false;
+    }
 }
 
 public class AsyncLoadResParam
@@ -54,9 +99,12 @@ public class AsyncCallBack
 
 public delegate void OnAsyncObjFinish(string path, Object obj, object param1 = null, object param2 = null, object param3 = null);
 
+/// <summary>
+/// 基础资源管理器，加载的所有资源是不需要实例化的（不需要在Hierarchy上出现GameObject的资源）  
+/// </summary>
 public class ResourceManager : Singleton<ResourceManager>
 {
-    public bool m_LoadFormAssetBundle = false;
+    public bool m_LoadFormAssetBundle = true;
 
 
     /// <summary>
@@ -99,7 +147,14 @@ public class ResourceManager : Singleton<ResourceManager>
 
     public void Init(MonoBehaviour mono)
     {
-        Application.quitting += () => { Resources.UnloadUnusedAssets(); };
+        Application.quitting += () =>
+        {
+#if UNITY_EDITOR
+            ResourceManager.Instance.ClearCache();
+            Resources.UnloadUnusedAssets();
+            Debug.Log("ClearCache and UnloadUnusedAssets .");
+#endif
+        };
         for (int i = 0; i < (int) LoadResPriority.RES_NUM; i++)
         {
             m_LoadingAssetList[i] = new List<AsyncLoadResParam>();
@@ -107,6 +162,148 @@ public class ResourceManager : Singleton<ResourceManager>
 
         m_Startmono = mono;
         m_Startmono.StartCoroutine(AsyncLoadCor());
+    }
+
+    /// <summary>
+    /// 清空缓存
+    /// </summary>
+    public void ClearCache()
+    {
+        List<ResourceItem> tempList = new List<ResourceItem>();
+        foreach (ResourceItem item in AssetDic.Values)
+        {
+            if (item.m_Clear)
+            {
+                tempList.Add(item);
+            }
+        }
+
+        foreach (ResourceItem item in tempList)
+        {
+            DestroyResourceItem(item, true);
+        }
+
+        tempList.Clear();
+    }
+
+    /// <summary>
+    /// 预加载资源
+    /// </summary>
+    /// <param name="path"></param>
+    public void PreloadRes(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        uint crc = ExCRC32.GetCRC32(path);
+
+        ResourceItem item = GetCacheResourceItem(crc, 0);
+
+        if (item != null)
+        {
+            return;
+        }
+
+        Object obj = null;
+
+#if UNITY_EDITOR
+        if (!m_LoadFormAssetBundle)
+        {
+            item = AssetBundleManager.Instance.FindResourceItem(crc);
+            if (item.m_Obj != null)
+            {
+                obj = item.m_Obj;
+            }
+            else
+            {
+                obj = LoadAssetByEditor<Object>(path);
+            }
+        }
+#endif
+
+        if (obj == null)
+        {
+            item = AssetBundleManager.Instance.LoadResourceAssetBundle(crc);
+            if (item != null && item.m_AssetBundle != null)
+            {
+                if (item.m_Obj != null)
+                {
+                    obj = item.m_Obj;
+                }
+                else
+                {
+                    obj = item.m_AssetBundle.LoadAsset<Object>(item.m_AssetName);
+                }
+            }
+        }
+
+        CacheResource(path, ref item, crc, obj);
+
+        //跳场景不清空缓存
+        item.m_Clear = false;
+        ReleaseResource(obj, false);
+    }
+
+    /// <summary>
+    /// 同步加载资源，针对给ObjectManager的接口
+    /// </summary>
+    /// <param name="path"></param>
+    /// <param name="resObj"></param>
+    /// <returns></returns>
+    public ResourceObj LoadResource(string path, ResourceObj resObj)
+    {
+        if (resObj == null)
+        {
+            return null;
+        }
+
+        uint crc = resObj.m_Crc == 0 ? ExCRC32.GetCRC32(path) : resObj.m_Crc;
+
+        ResourceItem item = GetCacheResourceItem(crc);
+        if (item != null)
+        {
+            resObj.m_ResItem = item;
+            return resObj;
+        }
+
+        Object obj = null;
+#if UNITY_EDITOR
+        if (!m_LoadFormAssetBundle)
+        {
+            item = AssetBundleManager.Instance.FindResourceItem(crc);
+            if (item.m_Obj != null)
+            {
+                obj = item.m_Obj as Object;
+            }
+            else
+            {
+                obj = LoadAssetByEditor<Object>(path);
+            }
+        }
+#endif
+
+        if (obj == null)
+        {
+            item = AssetBundleManager.Instance.LoadResourceAssetBundle(crc);
+            if (item != null && item.m_AssetBundle != null)
+            {
+                if (item.m_Obj != null)
+                {
+                    obj = item.m_Obj as Object;
+                }
+                else
+                {
+                    obj = item.m_AssetBundle.LoadAsset<Object>(item.m_AssetName);
+                }
+            }
+        }
+
+        CacheResource(path, ref item, crc, obj);
+        resObj.m_ResItem = item;
+        item.m_Clear = resObj.m_bClear;
+        return resObj;
     }
 
     /// <summary>
@@ -169,7 +366,7 @@ public class ResourceManager : Singleton<ResourceManager>
     }
 
     /// <summary>
-    /// 不需要实例化的资源的卸载
+    /// 不需要实例化的资源的卸载，根据对象
     /// </summary>
     /// <param name="obj"></param>
     /// <param name="desctroyObj"></param>
@@ -194,6 +391,31 @@ public class ResourceManager : Singleton<ResourceManager>
         if (item == null)
         {
             Debug.LogError("AssetDic 里不存在该资源 ： " + obj.name + " 可能释放了多次");
+        }
+
+        item.RefCount--;
+        DestroyResourceItem(item, desctroyObj);
+        return true;
+    }
+
+    /// <summary>
+    /// 不需要实例化的资源卸载，根据路径
+    /// </summary>
+    /// <param name="path"></param>
+    /// <param name="desctroyObj"></param>
+    /// <returns></returns>
+    public bool ReleaseResource(string path, bool desctroyObj = false)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return false;
+        }
+
+        uint crc = ExCRC32.GetCRC32(path);
+        ResourceItem item = null;
+        if (!AssetDic.TryGetValue(crc, out item) || item == null)
+        {
+            Debug.LogError("AssetDic 里不存在该资源 ： " + path + " 可能释放了多次");
         }
 
         item.RefCount--;
@@ -268,14 +490,14 @@ public class ResourceManager : Singleton<ResourceManager>
             return;
         }
 
-        if (!AssetDic.Remove(item.m_Crc))
+        if (!destroyCache)
         {
+            //m_NoRefrenceAssetMapList.InsertToHead(item);
             return;
         }
 
-        if (!destroyCache)
+        if (!AssetDic.Remove(item.m_Crc))
         {
-            m_NoRefrenceAssetMapList.InsertToHead(item);
             return;
         }
 
@@ -284,13 +506,10 @@ public class ResourceManager : Singleton<ResourceManager>
 
         if (item.m_Obj != null)
         {
-            if (!m_LoadFormAssetBundle)
-            {
-                Resources.UnloadAsset(item.m_Obj);
-                Resources.UnloadUnusedAssets();
-            }
-
             item.m_Obj = null;
+#if UNITY_EDITOR
+            Resources.UnloadUnusedAssets();
+#endif
         }
     }
 
@@ -663,6 +882,10 @@ public class DoubleLinkList<T> where T : class, new()
 }
 
 
+/// <summary>
+/// 双向链表
+/// </summary>
+/// <typeparam name="T"></typeparam>
 public class CMapList<T> where T : class, new()
 {
     private DoubleLinkList<T> m_DLink = new DoubleLinkList<T>();
