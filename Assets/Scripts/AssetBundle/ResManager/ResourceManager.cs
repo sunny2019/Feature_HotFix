@@ -1,9 +1,7 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using Ex;
 using UnityEngine;
-using Object = UnityEngine.Object;
 
 public enum LoadResPriority
 {
@@ -45,6 +43,25 @@ public class ResourceObj
     /// </summary>
     public bool m_Already = false;
 
+    #region 异步
+
+    /// <summary>
+    /// 是否放到场景节点下面
+    /// </summary>
+    public bool m_SetSceneParent = false;
+
+    /// <summary>
+    /// 实例化资源加载完成回调
+    /// </summary>
+    public OnAsyncObjFinish m_DealFinish = null;
+
+    /// <summary>
+    /// 异步参数
+    /// </summary>
+    public object m_Param1, m_Param2, m_Param3 = null;
+
+    #endregion
+
     public void Reset()
     {
         m_Crc = 0;
@@ -53,6 +70,9 @@ public class ResourceObj
         m_Guid = 0;
         m_ResItem = null;
         m_Already = false;
+        m_SetSceneParent = false;
+        m_DealFinish = null;
+        m_Param1 = m_Param2 = m_Param3 = null;
     }
 }
 
@@ -80,7 +100,19 @@ public class AsyncCallBack
     /// <summary>
     /// 加载完成的回调
     /// </summary>
-    public OnAsyncObjFinish m_DealFinish = null;
+    public OnAsyncObjFinish m_DealObjFinish = null;
+
+    /// <summary>
+    /// ObjectManager对应的中间类
+    /// </summary>
+    public ResourceObj m_ResObj = null;
+
+//-------------------------------------------------------------
+
+    /// <summary>
+    /// 加载完成的回调（针对ObjectManager）
+    /// </summary>
+    public OnAsyncFinish m_DealFinish = null;
 
     /// <summary>
     /// 回调参数
@@ -89,22 +121,35 @@ public class AsyncCallBack
 
     public void Reset()
     {
+        m_DealObjFinish = null;
         m_DealFinish = null;
         m_Param1 = null;
         m_Param2 = null;
         m_Param3 = null;
+        m_ResObj = null;
     }
 }
 
-
+/// <summary>
+/// 资源加载完成回调
+/// </summary>
 public delegate void OnAsyncObjFinish(string path, Object obj, object param1 = null, object param2 = null, object param3 = null);
+
+/// <summary>
+/// 实例化对象加载完成回调
+/// </summary>
+public delegate void OnAsyncFinish(string path, ResourceObj resObj, object param1 = null, object param2 = null, object param3 = null);
+
 
 /// <summary>
 /// 基础资源管理器，加载的所有资源是不需要实例化的（不需要在Hierarchy上出现GameObject的资源）  
 /// </summary>
 public class ResourceManager : Singleton<ResourceManager>
 {
-    public bool m_LoadFormAssetBundle = true;
+    protected long m_Guid = 0;
+
+
+    public bool m_LoadFormAssetBundle = false;
 
 
     /// <summary>
@@ -164,6 +209,16 @@ public class ResourceManager : Singleton<ResourceManager>
         m_Startmono.StartCoroutine(AsyncLoadCor());
     }
 
+
+    /// <summary>
+    /// 创建唯一的GUID
+    /// </summary>
+    /// <returns></returns>
+    public long CreateGuid()
+    {
+        return m_Guid++;
+    }
+
     /// <summary>
     /// 清空缓存
     /// </summary>
@@ -184,6 +239,100 @@ public class ResourceManager : Singleton<ResourceManager>
         }
 
         tempList.Clear();
+    }
+
+    /// <summary>
+    /// 取消异步加载资源
+    /// </summary>
+    /// <returns></returns>
+    public bool CancelLoad(ResourceObj res)
+    {
+        AsyncLoadResParam param = null;
+        if (m_LoadingAssetDic.TryGetValue(res.m_Crc, out param) && m_LoadingAssetList[(int) param.m_Priority].Contains(param))
+        {
+            for (int i = param.m_CallBackList.Count; i >= 0; i--)
+            {
+                AsyncCallBack tempCallBack = param.m_CallBackList[i];
+                if (tempCallBack != null && res == tempCallBack.m_ResObj)
+                {
+                    tempCallBack.Reset();
+                    m_AsyncCallBackPool.Recycle(tempCallBack);
+                    param.m_CallBackList.Remove(tempCallBack);
+                }
+            }
+
+            if (param.m_CallBackList.Count <= 0)
+            {
+                param.Reset();
+                m_LoadingAssetList[(int) param.m_Priority].Remove(param);
+                m_AsyncLoadResParamPool.Recycle(param);
+                m_LoadingAssetDic.Remove(res.m_Crc);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 根据ResObj增加引用计数
+    /// </summary>
+    /// <param name="resObj"></param>
+    /// <param name="count"></param>
+    /// <returns></returns>
+    public int IncreaseResourceRef(ResourceObj resObj, int count = 1)
+    {
+        return resObj != null ? IncreaseResourceRef(resObj.m_Crc, count) : 0;
+    }
+
+    /// <summary>
+    /// 根据path增加引用计数
+    /// </summary>
+    /// <param name="crc"></param>
+    /// <param name="count"></param>
+    /// <returns></returns>
+    public int IncreaseResourceRef(uint crc = 0, int count = 1)
+    {
+        ResourceItem item = null;
+        if (!AssetDic.TryGetValue(crc, out item) || item == null)
+        {
+            return 0;
+        }
+
+        item.RefCount += count;
+        item.m_LastUseTime = Time.realtimeSinceStartup;
+
+        return item.RefCount;
+    }
+
+
+    /// <summary>
+    /// 根据ResourceObj减少引用计数
+    /// </summary>
+    /// <param name="resObj"></param>
+    /// <param name="count"></param>
+    /// <returns></returns>
+    public int DecreaseResourceRef(ResourceObj resObj, int count = 1)
+    {
+        return resObj != null ? DecreaseResourceRef(resObj.m_Crc, count) : 0;
+    }
+
+    /// <summary>
+    /// 根据路径减少引用计数
+    /// </summary>
+    /// <param name="crc"></param>
+    /// <param name="count"></param>
+    /// <returns></returns>
+    public int DecreaseResourceRef(uint crc, int count = 1)
+    {
+        ResourceItem item = null;
+        if (!AssetDic.TryGetValue(crc, out item) || item == null)
+        {
+            return 0;
+        }
+
+        item.RefCount -= count;
+        return item.RefCount;
     }
 
     /// <summary>
@@ -366,6 +515,33 @@ public class ResourceManager : Singleton<ResourceManager>
     }
 
     /// <summary>
+    /// 根据ResourceObj卸载资源
+    /// </summary>
+    /// <param name="resObj"></param>
+    /// <param name="destroyObj"></param>
+    /// <returns></returns>
+    public bool ReleaseResource(ResourceObj resObj, bool destroyObj = false)
+    {
+        if (resObj == null)
+        {
+            return false;
+        }
+
+        ResourceItem item = null;
+        if (!AssetDic.TryGetValue(resObj.m_Crc, out item) || item == null)
+        {
+            Debug.LogError("AssetDic里不存在该资源：" + resObj.m_CloneObj.name + "   可能释放了多次");
+        }
+
+        GameObject.Destroy(resObj.m_CloneObj);
+
+        item.RefCount--;
+
+        DestroyResourceItem(item, destroyObj);
+        return true;
+    }
+
+    /// <summary>
     /// 不需要实例化的资源的卸载，根据对象
     /// </summary>
     /// <param name="obj"></param>
@@ -504,6 +680,9 @@ public class ResourceManager : Singleton<ResourceManager>
         //释放assetbundle引用
         AssetBundleManager.Instance.ReleaseAsset(item);
 
+        //清空资源对应的对象池
+        ObjectManager.Instance.ClearPoolObject(item.m_Crc);
+        
         if (item.m_Obj != null)
         {
             item.m_Obj = null;
@@ -520,6 +699,12 @@ public class ResourceManager : Singleton<ResourceManager>
     }
 #endif
 
+    /// <summary>
+    /// 从资源池获取缓存资源
+    /// </summary>
+    /// <param name="crc"></param>
+    /// <param name="addRefCount"></param>
+    /// <returns></returns>
     ResourceItem GetCacheResourceItem(uint crc, int addRefCount = 1)
     {
         ResourceItem item = null;
@@ -577,10 +762,50 @@ public class ResourceManager : Singleton<ResourceManager>
 
         //往回调列表里面加回调
         AsyncCallBack callback = m_AsyncCallBackPool.Spawn(true);
-        callback.m_DealFinish = dealFinish;
+        callback.m_DealObjFinish = dealFinish;
         callback.m_Param1 = param1;
         callback.m_Param2 = param2;
         callback.m_Param3 = param3;
+        para.m_CallBackList.Add(callback);
+    }
+
+    /// <summary>
+    /// 针对ObjectManager的异步加载接口
+    /// </summary>
+    /// <param name="path"></param>
+    /// <param name="resObj"></param>
+    /// <param name="dealFinish"></param>
+    /// <param name="priority"></param>
+    public void AsyncLoadResource(string path, ResourceObj resObj, OnAsyncFinish dealFinish, LoadResPriority priority)
+    {
+        ResourceItem item = GetCacheResourceItem(resObj.m_Crc);
+        if (item != null)
+        {
+            resObj.m_ResItem = item;
+            if (dealFinish != null)
+            {
+                dealFinish(path, resObj);
+            }
+
+            return;
+        }
+
+        //判断是否正在加载中
+        AsyncLoadResParam para = null;
+        if (!m_LoadingAssetDic.TryGetValue(resObj.m_Crc, out para) || para == null)
+        {
+            para = m_AsyncLoadResParamPool.Spawn(true);
+            para.m_Crc = resObj.m_Crc;
+            para.m_Path = path;
+            para.m_Priority = priority;
+            m_LoadingAssetDic.Add(resObj.m_Crc, para);
+            m_LoadingAssetList[(int) priority].Add(para);
+        }
+
+        //往回调列表里面加回调
+        AsyncCallBack callback = m_AsyncCallBackPool.Spawn(true);
+        callback.m_DealFinish = dealFinish;
+        callback.m_ResObj = resObj;
         para.m_CallBackList.Add(callback);
     }
 
@@ -647,10 +872,20 @@ public class ResourceManager : Singleton<ResourceManager>
                 for (int j = 0; j < callBackList.Count; j++)
                 {
                     AsyncCallBack callBack = callBackList[j];
-                    if (callBack != null && callBack.m_DealFinish != null)
+
+                    if (callBack != null && callBack.m_DealFinish != null && callBack.m_ResObj != null)
                     {
-                        callBack.m_DealFinish(loadingItem.m_Path, obj, callBack.m_Param1, callBack.m_Param2, callBack.m_Param3);
+                        ResourceObj tempResObj = callBack.m_ResObj;
+                        tempResObj.m_ResItem = item;
+                        callBack.m_DealFinish(loadingItem.m_Path, tempResObj, tempResObj.m_Param1, tempResObj.m_Param2, tempResObj.m_Param3);
                         callBack.m_DealFinish = null;
+                        tempResObj = null;
+                    }
+
+                    if (callBack != null && callBack.m_DealObjFinish != null)
+                    {
+                        callBack.m_DealObjFinish(loadingItem.m_Path, obj, callBack.m_Param1, callBack.m_Param2, callBack.m_Param3);
+                        callBack.m_DealObjFinish = null;
                     }
 
                     callBack.Reset();

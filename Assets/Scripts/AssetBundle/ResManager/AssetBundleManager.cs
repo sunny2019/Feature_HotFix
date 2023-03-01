@@ -1,4 +1,4 @@
-using System;
+
 using System.Collections.Generic;
 using System.IO;
 using Ex;
@@ -205,12 +205,12 @@ public class ResourceItem
     /// <summary>
     /// 该资源的文件名
     /// </summary>
-    public string m_AssetName = String.Empty;
+    public string m_AssetName = System.String.Empty;
 
     /// <summary>
     /// 该资源所在的AssetBundle 
     /// </summary>
-    public string m_ABName = String.Empty;
+    public string m_ABName = System.String.Empty;
 
     /// <summary>
     /// 该资源所依赖的AssetBundle

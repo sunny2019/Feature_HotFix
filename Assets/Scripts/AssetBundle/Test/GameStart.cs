@@ -1,51 +1,49 @@
-
 using Ex;
 using UnityEngine;
 
 public class GameStart : MonoBehaviour
 {
-    public AudioSource m_Audio;
-    private AudioClip _clip;
+    private GameObject obj;
 
     private void Awake()
     {
         GameObject.DontDestroyOnLoad(gameObject);
         AssetBundleManager.Instance.LoadAssetBundleConfig();
         ResourceManager.Instance.Init(this);
-        ObjectManager.Instance.Init(transform.Find("RecyclePoolTrs"),transform.Find("SceneTrs"));
-        
-    }
-    private void Start()
-    {
-        ResourceManager.Instance.PreloadRes("Assets/GameData/Sounds/menusound.mp3");
-        //ResourceManager.Instance.AsyncLoadResource("Assets/GameData/Sounds/menusound.mp3", OnLoadFinishe, LoadResPriority.RES_MIDDLE);
-        // _clip = ResourceManager.Instance.LoadResource<AudioClip>("Assets/GameData/Sounds/menusound.mp3");
-        // m_Audio.clip = _clip;
-        // m_Audio.Play();
+        ObjectManager.Instance.Init(transform.Find("RecyclePoolTrs"), transform.Find("SceneTrs"));
     }
 
-    private void OnLoadFinishe(string path, UnityEngine.Object obj, object param1, object param2, object param3)
+    private void Start()
     {
-        _clip = obj as AudioClip;
-        m_Audio.clip = _clip;
-        m_Audio.Play();
+        //ObjectManager.Instance.PreloadGameObject("Assets/GameData/Prefabs/Attack.prefab",20,false);
     }
+
+    private void OnLoadFinish(string path, UnityEngine.Object o, object param1, object param2, object param3)
+    {
+        ExStopwatch.Stop();
+        obj=o as GameObject;
+        
+        //歇
+    }
+
 
     private void Update()
     {
         if (Input.GetKeyDown(KeyCode.A))
         {
-            ExStopwatch.Start();
-            _clip = ResourceManager.Instance.LoadResource<AudioClip>("Assets/GameData/Sounds/menusound.mp3");
-            ExStopwatch.Stop();
-            m_Audio.clip = _clip;
-            m_Audio.Play();
-        }else if (Input.GetKeyDown(KeyCode.D))
+            ObjectManager.Instance.ReleaseObject(obj);
+            obj = null;
+        }
+        else if (Input.GetKeyDown(KeyCode.D))
         {
-            ResourceManager.Instance.ReleaseResource(_clip, true);
-            _clip = null;
-            m_Audio.clip = null;
+            ExStopwatch.Start();
+            ObjectManager.Instance.InstantiateObjectAsync("Assets/GameData/Prefabs/Attack.prefab", OnLoadFinish, LoadResPriority.RES_HIGHT,true);
+
+        }
+        else if (Input.GetKeyDown(KeyCode.S))
+        {
+            ObjectManager.Instance.ReleaseObject(obj, 0, true);
+            obj = null;
         }
     }
-
 }
